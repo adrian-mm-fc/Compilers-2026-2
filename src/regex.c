@@ -10,16 +10,24 @@ item_type get_item_type(char c);
 
 regex parse_regex(const char *regex_str)
 {
-    (void)regex_str;
-    // TODO: Implement regex parsing pipeline.
-    // Suggested algorithm:
-    // 1) Tokenize input into item array (respect escapes).
-    // 2) Insert explicit concatenation operators where needed.
-    // 3) Convert infix sequence to postfix using Shunting Yard.
-    // 4) Return resulting postfix item array and size.
+    // First, we itemize the regex string into an array of items
+    int size;
+    item *items = itemize_regex(regex_str, &size);
+    // Next, we convert implicit concatenation to explicit concatenation
+    int explicit_size;
+    item *explicit_items = implicit_to_explicit_concatenation(items, size, &explicit_size);
+    // We can free the original items array as we no longer need it
+    free(items);
+    // Finally, we convert the infix notation to postfix notation using the shunting yard algorithm
+    int postfix_size = 0;
+    item *postfix_items = shunting_yard(explicit_items, explicit_size, &postfix_size);
+    // We can free the explicit items array as we no longer need it
+    free(explicit_items);
+
     regex result;
-    result.size = 0;
-    result.items = NULL;
+    result.size = postfix_size;
+    result.items = postfix_items;
+
     return result;
 }
 
@@ -34,18 +42,41 @@ regex parse_regex(const char *regex_str)
  */
 item *itemize_regex(const char *regex_str, int *out_size)
 {
-    (void)regex_str;
-    // TODO: Tokenize regex string into item array.
-    // Suggested algorithm:
-    // 1) Scan input left-to-right.
-    // 2) If ESCAPE_SYMBOL appears, consume next char as OPERAND.
-    // 3) Otherwise classify character with get_item_type().
-    // 4) Allocate exact-size heap array and copy tokens.
-    if (out_size)
+    // Get an approximation of the number of items
+    // in the regex by counting the characters
+    int length = strlen(regex_str);
+
+    // Create a temporary array to hold the items
+    item temp_items[length];
+
+    *out_size = 0;
+
+    // Iterate through the regex string and create items
+    for (size_t i = 0; i < length; i++)
     {
-        *out_size = 0;
+        if (regex_str[i] == ESCAPE_SYMBOL && i + 1 < length)
+        {
+            // If we encounter an escape symbol, we need to skip
+            // it and take the next character as a literal
+            temp_items[(*out_size)++] = new_item(regex_str[++i], OPERAND);
+        }
+        else
+        {
+            // For other characters, we check if they are operators or not
+            temp_items[(*out_size)++] = new_item(regex_str[i], get_item_type(regex_str[i]));
+        }
     }
-    return NULL;
+
+    // Allocate memory for the items array in the regex struct
+    item *items = malloc(*out_size * sizeof(item));
+
+    // Copy items from the temporary array to the allocated array
+    for (int i = 0; i < *out_size; i++)
+    {
+        items[i] = temp_items[i];
+    }
+
+    return items;
 }
 
 /**
@@ -60,20 +91,80 @@ item *itemize_regex(const char *regex_str, int *out_size)
  */
 item *shunting_yard(const item *items, int size, int *out_size)
 {
-    (void)items;
-    (void)size;
-    // TODO: Convert infix item sequence to postfix using Shunting Yard.
-    // Suggested algorithm:
-    // 1) Push operands directly to output queue.
-    // 2) Use operator stack for precedence/associativity handling.
-    // 3) Handle parentheses by popping until matching left parenthesis.
-    // 4) Drain stack; validate mismatched parentheses.
-    // 5) Return compact heap-allocated postfix array.
+    // Shunting Yard algorithm initialization
+    item operators[size];
+    item output[size];
+    int operators_top = -1;
+    int output_top = -1;
+
+    // Iterate through the items and apply the shunting yard algorithm
+    for (size_t i = 0; i < size; i++)
+    {
+        if (items[i].type == OPERAND)
+        {
+            // If the item is not an operator, add it to the output
+            output[++output_top] = items[i];
+        }
+        else
+        {
+            // If the item is a right parenthesis, pop operators to the output
+            // until we find a left parenthesis. If we don't find a left parenthesis,
+            // it means there are mismatched parentheses.
+            if (items[i].type == R_PARENTHESIS)
+            {
+                while (operators_top != -1 && operators[operators_top].type != L_PARENTHESIS)
+                {
+                    output[++output_top] = operators[operators_top--];
+                }
+                if (operators_top == -1)
+                {
+                    // Mismatched parentheses
+                    return NULL;
+                }
+                // Pop the left parenthesis from the stack
+                operators_top--;
+            }
+            else if (items[i].type == L_PARENTHESIS)
+            {
+                operators[++operators_top] = items[i];
+            }
+            else
+            {
+                // If the item is an operator, pop operators from the stack to the output
+                // while they have higher or equal precedence and are not left parentheses
+                while (operators_top != -1 &&
+                       operators[operators_top].type >= items[i].type &&
+                       operators[operators_top].type != L_PARENTHESIS)
+                {
+                    output[++output_top] = operators[operators_top--];
+                }
+                operators[++operators_top] = items[i];
+            }
+        }
+    }
+
+    // After processing all items, pop any remaining operators from the stack to the output
+    while (operators_top != -1)
+    {
+        if (operators[operators_top].type == L_PARENTHESIS)
+        {
+            // Mismatched parentheses
+            return NULL;
+        }
+        output[++output_top] = operators[operators_top--];
+    }
+
+    // Clean up the output array to return only the valid items
+    item *result = malloc((output_top + 1) * sizeof(item));
+    for (int i = 0; i <= output_top; i++)
+    {
+        result[i] = output[i];
+    }
     if (out_size)
     {
-        *out_size = 0;
+        *out_size = output_top + 1;
     }
-    return NULL;
+    return result;
 }
 
 /**
@@ -88,20 +179,36 @@ item *shunting_yard(const item *items, int size, int *out_size)
  */
 item *implicit_to_explicit_concatenation(const item *items, int size, int *out_size)
 {
-    (void)items;
-    (void)size;
-    // TODO: Insert explicit concatenation operators into token sequence.
-    // Suggested algorithm:
-    // 1) Copy each item to a temporary output buffer.
-    // 2) For each adjacent pair, detect concat boundary:
-    //    (operand|right-paren|unary-closure) followed by (operand|left-paren).
-    // 3) Insert CONCATENATION token when boundary is true.
-    // 4) Return exact-size heap copy of result.
-    if (out_size)
+    // This function will convert implicit concatenation in the regex to explicit concatenation
+    // For example, "ab" will be converted to "a.b"
+
+    // We can have at most size * 2 items in the worst case (every item is an operand followed by a concatenation operator)
+    item temp_items[size * 2];
+    int temp_size = 0;
+
+    // Iterate through the items and insert concatenation operators where needed
+    for (size_t i = 0; i < size; i++)
     {
-        *out_size = 0;
+        temp_items[temp_size++] = items[i];
+
+        // Check if we need to insert a concatenation operator
+        if (i + 1 < size &&
+            ((items[i].type == OPERAND || items[i].type == R_PARENTHESIS || items[i].type == KLEENE_STAR || items[i].type == POSITIVE_CLOSURE || items[i].type == OPTIONAL) &&
+             (items[i + 1].type == OPERAND || items[i + 1].type == L_PARENTHESIS)))
+        {
+            temp_items[temp_size++] = new_item(CONCATENATION_SYMBOL, CONCATENATION);
+        }
     }
-    return NULL;
+
+    // Allocate memory for the output array
+    item *result = malloc(temp_size * sizeof(item));
+    for (int i = 0; i < temp_size; i++)
+    {
+        result[i] = temp_items[i];
+    }
+
+    *out_size = temp_size;
+    return result;
 }
 
 /**
@@ -113,11 +220,10 @@ item *implicit_to_explicit_concatenation(const item *items, int size, int *out_s
  */
 item new_item(char value, item_type type)
 {
-    // TODO: Build and return an item with the provided fields.
-    item placeholder;
-    placeholder.value = value;
-    placeholder.type = type;
-    return placeholder;
+    item new_item;
+    new_item.value = value;
+    new_item.type = type;
+    return new_item;
 }
 
 /**
@@ -128,13 +234,31 @@ item new_item(char value, item_type type)
  */
 item_type get_item_type(char c)
 {
-    (void)c;
-    // TODO: Map regex metacharacters to item_type; default to OPERAND.
-    return OPERAND;
+    switch (c)
+    {
+    case LEFT_PARENTHESIS_SYMBOL:
+        return L_PARENTHESIS;
+    case RIGHT_PARENTHESIS_SYMBOL:
+        return R_PARENTHESIS;
+    case CONCATENATION_SYMBOL:
+        return CONCATENATION;
+    case KLEENE_STAR_SYMBOL:
+        return KLEENE_STAR;
+    case POSITIVE_CLOSURE_SYMBOL:
+        return POSITIVE_CLOSURE;
+    case OPTIONAL_SYMBOL:
+        return OPTIONAL;
+    case ALTERNATION_SYMBOL:
+        return ALTERNATION;
+    default:
+        return OPERAND;
+    }
 }
 
 void free_regex(regex r)
 {
-    (void)r;
-    // TODO: Free heap resources owned by regex (at minimum, r.items when non-NULL).
+    if (r.items)
+    {
+        free(r.items);
+    }
 }

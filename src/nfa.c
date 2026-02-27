@@ -66,12 +66,17 @@ nfa t_nfa_to_nfa(t_nfa temp_nfa, states_manager manager);
  */
 alphabet new_alphabet()
 {
-    // TODO: Initialize alphabet with epsilon at column 0.
-    // Suggested algorithm:
-    // 1) Initialize char_to_col to -1 and symbols to 0.
-    // 2) Place EPSILON_SYMBOL at symbols[0].
-    // 3) Map EPSILON_SYMBOL -> 0 and set symbol_count = 1.
-    alphabet a = {0};
+    alphabet a;
+
+    memset(a.char_to_col, -1, sizeof(a.char_to_col));
+    memset(a.symbols, 0, sizeof(a.symbols));
+
+    // Add the epsilon symbol to the alphabet
+    // For mapping purposes, the epsilon symbol is at index 0
+    a.symbols[0] = EPSILON_SYMBOL;
+    a.char_to_col[EPSILON_SYMBOL] = 0;
+
+    a.symbol_count = 1;
     return a;
 }
 
@@ -84,13 +89,16 @@ alphabet new_alphabet()
  */
 void add_symbol(alphabet *a, char symbol)
 {
-    (void)a;
-    (void)symbol;
-    // TODO: Insert non-epsilon symbol if absent.
-    // Suggested algorithm:
-    // 1) Reject EPSILON_SYMBOL and duplicates via char_to_col lookup.
-    // 2) Append symbol into symbols[symbol_count].
-    // 3) Update char_to_col and increment symbol_count.
+    // Check if the symbol is already in the alphabet
+    if (a->char_to_col[(unsigned char)symbol] != -1 || symbol == EPSILON_SYMBOL)
+    {
+        return; // Symbol already exists, do nothing
+    }
+
+    // Add the symbol to the alphabet
+    a->symbols[a->symbol_count] = symbol;
+    a->char_to_col[(unsigned char)symbol] = a->symbol_count;
+    a->symbol_count++;
 }
 
 /**
@@ -101,8 +109,12 @@ void add_symbol(alphabet *a, char symbol)
  */
 states_manager new_states_manager()
 {
-    // TODO: Initialize state manager with empty states/transitions and fresh alphabet.
-    states_manager manager = {0};
+    states_manager manager;
+
+    manager.next_id = 0;
+    manager.states_count = 0;
+    manager.transitions_count = 0;
+    manager.manager_alphabet = new_alphabet();
     return manager;
 }
 
@@ -114,9 +126,12 @@ states_manager new_states_manager()
  */
 uint8_t new_state(states_manager *manager)
 {
-    (void)manager;
-    // TODO: Allocate a new state id, store in manager->states, and advance counters.
-    return 0;
+    uint8_t state = manager->next_id;
+    manager->states[manager->states_count] = state;
+    manager->states_count++;
+    manager->next_id++;
+
+    return state;
 }
 
 /**
@@ -129,11 +144,13 @@ uint8_t new_state(states_manager *manager)
  */
 void add_transition(states_manager *manager, uint8_t from_state, char symbol, uint8_t to_state)
 {
-    (void)manager;
-    (void)from_state;
-    (void)symbol;
-    (void)to_state;
-    // TODO: Append transition record to manager->transitions and increment count.
+    t_transition transition;
+    transition.from_state = from_state;
+    transition.symbol = symbol;
+    transition.to_state = to_state;
+
+    manager->transitions[manager->transitions_count] = transition;
+    manager->transitions_count++;
 }
 
 /**
@@ -148,14 +165,17 @@ void add_transition(states_manager *manager, uint8_t from_state, char symbol, ui
  */
 t_nfa concat_nfa(states_manager *manager, t_nfa *a, t_nfa *b)
 {
-    (void)manager;
-    (void)a;
-    (void)b;
-    // TODO: Build concatenation fragment.
-    // Suggested algorithm:
-    // 1) start = a->start, end = b->end.
-    // 2) Add epsilon transition a->end -> b->start.
-    t_nfa result = {0};
+    // Create a new nfa that represents the concatenation of a and b.
+    t_nfa result;
+
+    // The start state of the result is the start state of a
+    result.start = a->start;
+    // The end state of the result is the end state of b
+    result.end = b->end;
+
+    // Add an epsilon transition from the end state of a to the start state of b
+    add_transition(manager, a->end, EPSILON_SYMBOL, b->start);
+
     return result;
 }
 
@@ -169,10 +189,18 @@ t_nfa concat_nfa(states_manager *manager, t_nfa *a, t_nfa *b)
  */
 t_nfa symbol_nfa(states_manager *manager, char symbol)
 {
-    (void)manager;
-    (void)symbol;
-    // TODO: Build a 2-state fragment with one symbol transition start -> end.
-    t_nfa result = {0};
+    // Create a new nfa that represents the symbol.
+    t_nfa result;
+
+    // The start state of the result is the next available state
+    result.start = new_state(manager);
+
+    // The end state of the result is the next available state
+    result.end = new_state(manager);
+
+    // Add a transition from the start state to the end state on the given symbol
+    add_transition(manager, result.start, symbol, result.end);
+
     return result;
 }
 
@@ -188,11 +216,27 @@ t_nfa symbol_nfa(states_manager *manager, char symbol)
  */
 t_nfa union_nfa(states_manager *manager, t_nfa *a, t_nfa *b)
 {
-    (void)manager;
-    (void)a;
-    (void)b;
-    // TODO: Build alternation fragment with new start/end and 4 epsilon transitions.
-    t_nfa result = {0};
+    // Create a new nfa that represents the union of a and b.
+    t_nfa result;
+
+    // The start state of the result is the next available state
+    result.start = new_state(manager);
+
+    // The end state of the result is the next available state
+    result.end = new_state(manager);
+
+    // Add an epsilon transition from the start state of the result to the start state of a
+    add_transition(manager, result.start, EPSILON_SYMBOL, a->start);
+
+    // Add an epsilon transition from the start state of the result to the start state of b
+    add_transition(manager, result.start, EPSILON_SYMBOL, b->start);
+
+    // Add an epsilon transition from the end state of a to the end state of the result
+    add_transition(manager, a->end, EPSILON_SYMBOL, result.end);
+
+    // Add an epsilon transition from the end state of b to the end state of the result
+    add_transition(manager, b->end, EPSILON_SYMBOL, result.end);
+
     return result;
 }
 
@@ -208,15 +252,24 @@ t_nfa union_nfa(states_manager *manager, t_nfa *a, t_nfa *b)
  */
 t_nfa positive_closure_nfa(states_manager *manager, t_nfa *a)
 {
-    (void)manager;
-    (void)a;
-    // TODO: Build positive-closure fragment.
-    // Suggested algorithm:
-    // 1) Create new start/end.
-    // 2) Epsilon start -> a.start.
-    // 3) Epsilon a.end -> a.start (loop).
-    // 4) Epsilon a.end -> end.
-    t_nfa result = {0};
+    // Create a new nfa that represents the positive closure of a.
+    t_nfa result;
+
+    // The start state of the result is the next available state
+    result.start = new_state(manager);
+
+    // The end state of the result is the next available state
+    result.end = new_state(manager);
+
+    // Add an epsilon transition from the start state of the result to the start state of a
+    add_transition(manager, result.start, EPSILON_SYMBOL, a->start);
+
+    // Add an epsilon transition from the end state of a to the start state of a
+    add_transition(manager, a->end, EPSILON_SYMBOL, a->start);
+
+    // Add an epsilon transition from the end state of a to the end state of the result
+    add_transition(manager, a->end, EPSILON_SYMBOL, result.end);
+
     return result;
 }
 
@@ -234,10 +287,12 @@ t_nfa positive_closure_nfa(states_manager *manager, t_nfa *a)
  */
 t_nfa kleene_closure_nfa(states_manager *manager, t_nfa *a)
 {
-    (void)manager;
-    (void)a;
-    // TODO: Build Kleene-star fragment (positive closure + epsilon start->end).
-    t_nfa result = {0};
+    // Create a new postive closure nfa for a
+    t_nfa result = positive_closure_nfa(manager, a);
+
+    // Add an epsilon transition from the start state of the result to the end state of the result
+    add_transition(manager, result.start, EPSILON_SYMBOL, result.end);
+
     return result;
 }
 
@@ -251,26 +306,80 @@ t_nfa kleene_closure_nfa(states_manager *manager, t_nfa *a)
  */
 t_nfa optional_nfa(states_manager *manager, t_nfa *a)
 {
-    (void)manager;
-    (void)a;
-    // TODO: Build optional fragment by adding epsilon path that skips sub-NFA.
-    t_nfa result = {0};
-    return result;
+    // Add an epsilon transition from the start state of a to the end state of a
+    add_transition(manager, a->start, EPSILON_SYMBOL, a->end);
+
+    return *a;
 }
 
 
 nfa regex_to_nfa(const regex r)
 {
-    (void)r;
-    // TODO: Convert postfix regex into NFA via Thompson construction.
-    // Suggested algorithm:
-    // 1) Iterate tokens using a stack of temporary fragments.
-    // 2) Push symbol fragment for operands.
-    // 3) Pop/apply operators (concat, alternation, unary closures).
-    // 4) Validate stack ends with exactly one fragment.
-    // 5) Materialize transition table and epsilon-closure cache.
-    nfa result = {0};
-    return result;
+    // Create a new states manager
+    states_manager manager = new_states_manager();
+
+    // Initialize a stack to hold the uint8_termediate NFAs
+    t_nfa stack[MAX_STATES];
+    uint8_t stack_top = -1;
+
+    // Process each item in the regex
+    for (uint8_t i = 0; i < r.size; i++)
+    {
+        // Get the current item
+        item current_item = r.items[i];
+
+        // If the item is an operand, create a new NFA for the symbol and push it onto the stack
+        if (current_item.type == OPERAND)
+        {
+            stack[++stack_top] = symbol_nfa(&manager, current_item.value);
+            // Add the symbol to the manager's alphabet
+            add_symbol(&manager.manager_alphabet, current_item.value);
+        }
+        // Else, the item is an operator, so pop the necessary NFAs from the stack, apply the
+        // operator, and push the result back onto the stack
+        else
+        {
+            if (current_item.type == CONCATENATION)
+            {
+                t_nfa b = stack[stack_top--];
+                t_nfa a = stack[stack_top--];
+                stack[++stack_top] = concat_nfa(&manager, &a, &b);
+            }
+            else if (current_item.type == ALTERNATION)
+            {
+                t_nfa b = stack[stack_top--];
+                t_nfa a = stack[stack_top--];
+                stack[++stack_top] = union_nfa(&manager, &a, &b);
+            }
+            else if (current_item.type == POSITIVE_CLOSURE)
+            {
+                t_nfa a = stack[stack_top--];
+                stack[++stack_top] = positive_closure_nfa(&manager, &a);
+            }
+            else if (current_item.type == KLEENE_STAR)
+            {
+                t_nfa a = stack[stack_top--];
+                stack[++stack_top] = kleene_closure_nfa(&manager, &a);
+            }
+            else if (current_item.type == OPTIONAL)
+            {
+                t_nfa a = stack[stack_top--];
+                stack[++stack_top] = optional_nfa(&manager, &a);
+            }
+        }
+    }
+
+    // The final NFA is the only NFA left on the stack
+    if (stack_top != 0)
+    {
+        fprintf(stderr, "Error: Invalid regex. Stack should have exactly one NFA left, but has %d.\n", stack_top + 1);
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        t_nfa temp_nfa = stack[stack_top];
+        return t_nfa_to_nfa(temp_nfa, manager);
+    }
 }
 
 /**
@@ -283,15 +392,31 @@ nfa regex_to_nfa(const regex r)
  */
 nfa t_nfa_to_nfa(t_nfa temp_nfa, states_manager manager)
 {
-    (void)temp_nfa;
-    (void)manager;
-    // TODO: Convert temporary builder representation into final NFA struct.
-    // Suggested algorithm:
-    // 1) Initialize metadata (start, accept mask, state count, alphabet).
-    // 2) Allocate transition matrix and zero-initialize.
-    // 3) Populate transitions from manager records.
-    // 4) Precompute epsilon closures.
-    nfa result = {0};
+    nfa result;
+    result.start_state = temp_nfa.start;
+    result.states = manager.states_count;
+    result.accept_states = (1ULL << temp_nfa.end);
+    result.nfa_alphabet = manager.manager_alphabet;
+
+    // Initialize the transition table with empty sets
+    result.transitions = malloc(result.states * sizeof(uint64_t *));
+    for (int i = 0; i < result.states; i++)
+    {
+        result.transitions[i] = malloc(result.nfa_alphabet.symbol_count * sizeof(uint64_t));
+        for (int j = 0; j < result.nfa_alphabet.symbol_count; j++)
+            result.transitions[i][j] = 0;
+    }
+
+    // Fill the transition table based on the transitions in the manager
+    for (uint8_t i = 0; i < manager.transitions_count; i++)
+    {
+        t_transition t = manager.transitions[i];
+        int col = result.nfa_alphabet.char_to_col[(unsigned char)t.symbol];
+        result.transitions[t.from_state][col] |= (1ULL << t.to_state);
+    }
+
+    calculate_epsilon_closure(&result);
+
     return result;
 }
 
@@ -303,12 +428,23 @@ nfa t_nfa_to_nfa(t_nfa temp_nfa, states_manager manager)
  */
 void calculate_epsilon_closure(nfa *automaton)
 {
-    (void)automaton;
-    // TODO: Allocate and fill epsilon-closure cache for every state.
-    // Suggested algorithm:
-    // 1) Allocate cache array size automaton->states.
-    // 2) Mark entries as "not computed".
-    // 3) Invoke epsilon_closure() for each state.
+    // Allocate cache storage sized for all states.
+    uint64_t *closure_cache = malloc(automaton->states * sizeof(uint64_t));
+
+    // Initialize the cache to 0 so we can detect "not computed".
+    for (int i = 0; i < automaton->states; i++)
+    {
+        closure_cache[i] = 0;
+    }
+
+    // Attach the cache to the automaton.
+    automaton->epsilon_closure_cache = closure_cache;
+
+    // Compute all closures up front so lookups are O(1).
+    for (uint8_t state = 0; state < automaton->states; state++)
+    {
+        epsilon_closure(automaton, state);
+    }
 }
 
 /**
@@ -320,27 +456,89 @@ void calculate_epsilon_closure(nfa *automaton)
  */
 void epsilon_closure(nfa *automaton, uint8_t state)
 {
-    (void)automaton;
-    (void)state;
-    // TODO: Compute epsilon closure for one state using DFS/BFS.
-    // Suggested algorithm:
-    // 1) Seed closure with the input state.
-    // 2) Traverse epsilon edges using stack/queue.
-    // 3) Add each discovered state exactly once.
-    // 4) Store resulting bitset into cache[state].
+    // Return if the closure for this state has already been computed and cached.
+    if (automaton->epsilon_closure_cache[state] != 0)
+        return;
+
+    // Start with the state itself in the closure.
+    uint64_t closure = (1ULL << state);
+
+    // Use an explicit stack for DFS over epsilon transitions.
+    uint8_t stack[MAX_STATES];
+    int stack_top = -1;
+
+    // Push the initial state.
+    stack[++stack_top] = state;
+
+    // Explore epsilon transitions until the stack is empty.
+    while (stack_top >= 0)
+    {
+        uint8_t current_state = stack[stack_top--];
+        uint64_t epsilon_transitions = automaton->transitions[current_state][0];
+
+        // Add newly discovered states to the closure and stack.
+        for (uint8_t next_state = 0; next_state < automaton->states; next_state++)
+        {
+            if ((epsilon_transitions & (1ULL << next_state)) != 0 &&
+                (closure & (1ULL << next_state)) == 0)
+            {
+                closure |= (1ULL << next_state);
+                stack[++stack_top] = next_state;
+            }
+        }
+    }
+
+    // Cache the computed closure for this state.
+    automaton->epsilon_closure_cache[state] = closure;
 }
 
 bool match_nfa(nfa automaton, const char *input, size_t input_length)
 {
-    (void)automaton;
-    (void)input;
-    (void)input_length;
-    // TODO: Simulate NFA with epsilon closures.
-    // Suggested algorithm:
-    // 1) current = epsilon_closure(start_state).
-    // 2) For each symbol, compute move(current, symbol).
-    // 3) Expand via epsilon closures of reached states.
-    // 4) Early reject if current set becomes empty.
-    // 5) Accept if current intersects accept_states.
-    return false;
+    // Start with the epsilon closure of the start state.
+    uint64_t current_states = automaton.epsilon_closure_cache[automaton.start_state];
+
+    // Process each input character.
+    for (size_t i = 0; i < input_length; i++)
+    {
+        char symbol = input[i];
+        int col = automaton.nfa_alphabet.char_to_col[(unsigned char)symbol];
+
+        // If the symbol is not in the alphabet, no transitions are possible.
+        if (col == -1)
+        {
+            return false;
+        }
+
+        uint64_t next_states = 0;
+
+        // For each current state, find reachable states on the input symbol.
+        for (uint8_t state = 0; state < automaton.states; state++)
+        {
+            if ((current_states & (1ULL << state)) != 0)
+            {
+                next_states |= automaton.transitions[state][col];
+            }
+        }
+
+        // Compute the epsilon closure of the next states.
+        uint64_t new_current_states = 0;
+        for (uint8_t state = 0; state < automaton.states; state++)
+        {
+            if ((next_states & (1ULL << state)) != 0)
+            {
+                new_current_states |= automaton.epsilon_closure_cache[state];
+            }
+        }
+
+        current_states = new_current_states;
+
+        // If there are no current states, the input is rejected.
+        if (current_states == 0)
+        {
+            return false;
+        }
+    }
+
+    // Check if any of the current states are accept states.
+    return (current_states & automaton.accept_states) != 0;
 }
