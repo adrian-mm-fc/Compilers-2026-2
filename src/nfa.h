@@ -74,4 +74,19 @@ nfa regex_to_nfa(const regex r);
  */
 bool match_nfa(nfa automaton, const char *input, size_t input_length);
 
+/**
+ * @brief Serialize an NFA to a binary file.
+ * The serialized format stores metadata, alphabet symbols and transition table.
+ * @param automaton Pointer to the NFA to serialize
+ * @param file_path Output file path
+ * @return true if the file was written successfully, false otherwise
+ */
+bool save_nfa(const nfa *automaton, const char *file_path);
+
+/**
+ * @brief Release heap memory owned by an NFA.
+ * @param automaton Pointer to the NFA to free
+ */
+void free_nfa(nfa *automaton);
+
 #endif // NFA_H
