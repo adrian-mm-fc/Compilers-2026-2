@@ -542,3 +542,85 @@ bool match_nfa(nfa automaton, const char *input, size_t input_length)
     // Check if any of the current states are accept states.
     return (current_states & automaton.accept_states) != 0;
 }
+
+bool save_nfa(const nfa *automaton, const char *file_path)
+{
+    if (automaton == NULL || file_path == NULL)
+    {
+        return false;
+    }
+
+    FILE *file = fopen(file_path, "wb");
+    if (file == NULL)
+    {
+        return false;
+    }
+
+    const uint32_t magic = 0x3141464E; // NFA1
+    const uint32_t version = 1;
+    const int32_t symbol_count = automaton->nfa_alphabet.symbol_count;
+
+    if (symbol_count <= 0 || symbol_count > 256)
+    {
+        fclose(file);
+        return false;
+    }
+
+    if (fwrite(&magic, sizeof(magic), 1, file) != 1 ||
+        fwrite(&version, sizeof(version), 1, file) != 1 ||
+        fwrite(&automaton->start_state, sizeof(automaton->start_state), 1, file) != 1 ||
+        fwrite(&automaton->states, sizeof(automaton->states), 1, file) != 1 ||
+        fwrite(&automaton->accept_states, sizeof(automaton->accept_states), 1, file) != 1 ||
+        fwrite(&symbol_count, sizeof(symbol_count), 1, file) != 1)
+    {
+        fclose(file);
+        return false;
+    }
+
+    if (fwrite(automaton->nfa_alphabet.symbols, sizeof(char), (size_t)symbol_count, file) != (size_t)symbol_count)
+    {
+        fclose(file);
+        return false;
+    }
+
+    for (uint8_t state = 0; state < automaton->states; state++)
+    {
+        if (fwrite(automaton->transitions[state], sizeof(uint64_t), (size_t)symbol_count, file) != (size_t)symbol_count)
+        {
+            fclose(file);
+            return false;
+        }
+    }
+
+    if (fclose(file) != 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void free_nfa(nfa *automaton)
+{
+    if (automaton == NULL)
+    {
+        return;
+    }
+
+    if (automaton->transitions != NULL)
+    {
+        for (uint8_t state = 0; state < automaton->states; state++)
+        {
+            free(automaton->transitions[state]);
+        }
+        free(automaton->transitions);
+    }
+
+    free(automaton->epsilon_closure_cache);
+
+    automaton->transitions = NULL;
+    automaton->epsilon_closure_cache = NULL;
+    automaton->states = 0;
+    automaton->start_state = 0;
+    automaton->accept_states = 0;
+}
